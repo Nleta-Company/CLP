@@ -1,7 +1,8 @@
 
-"use client"
+"use client";
 
-import Link from "next/link"
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import {
   ArrowRight,
@@ -15,167 +16,326 @@ import {
   FileText,
   GraduationCap,
   MoreHorizontal,
+  RefreshCw,
   ShieldCheck,
   UserPlus,
   Users,
-} from "lucide-react"
+} from "lucide-react";
 
-import { Badge } from "@/components/ui/badge"
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
+} from "@/components/ui/card";
 
-const requests = [
-  {
-    id: "REQ-2026-0102",
-    client: "ABC Manufacturing",
-    service: "Corporate Safety Training",
-    status: "Verification",
-    submitted: "10 min ago",
-    priority: "High",
-  },
-  {
-    id: "REQ-2026-0101",
-    client: "XYZ Industries",
-    service: "Fire Safety Training",
-    status: "TSO Pending",
-    submitted: "32 min ago",
-    priority: "Medium",
-  },
-  {
-    id: "REQ-2026-0098",
-    client: "Global Tech Pvt. Ltd.",
-    service: "Workplace Safety Training",
-    status: "Trainer Assignment",
-    submitted: "1 hour ago",
-    priority: "High",
-  },
-  {
-    id: "REQ-2026-0096",
-    client: "Prime Engineering",
-    service: "Industrial Safety Training",
-    status: "Report Preparation",
-    submitted: "2 hours ago",
-    priority: "Medium",
-  },
-]
+// ==========================================
+// TYPES
+// ==========================================
 
-const workflowSteps = [
-  {
-    label: "Verification",
-    count: 8,
-    icon: ClipboardCheck,
-    color: "amber",
-  },
-  {
-    label: "TSO",
-    count: 5,
-    icon: FileText,
-    color: "blue",
-  },
-  {
-    label: "PSGA",
-    count: 3,
-    icon: FileCheck2,
-    color: "violet",
-  },
-  {
-    label: "TAF",
-    count: 4,
-    icon: FileCheck2,
-    color: "indigo",
-  },
-  {
-    label: "Trainer",
-    count: 6,
-    icon: UserPlus,
-    color: "cyan",
-  },
-  {
-    label: "Training",
-    count: 9,
-    icon: GraduationCap,
-    color: "emerald",
-  },
-  {
-    label: "Reports",
-    count: 4,
-    icon: Award,
-    color: "rose",
-  },
-]
+type RequestProgram = {
+  program: {
+    code: string;
+    title: string;
+    category: string;
+  };
+};
 
-const statCards = [
-  {
-    title: "New Requests",
-    value: "12",
-    description: "Awaiting processing",
-    icon: ClipboardCheck,
-    className:
-      "border-indigo-100 bg-gradient-to-br from-indigo-50 to-white",
-    iconClass: "bg-indigo-100 text-indigo-600",
-    valueClass: "text-indigo-700",
-  },
-  {
-    title: "Verification",
-    value: "8",
-    description: "Need your attention",
-    icon: ShieldCheck,
-    className:
-      "border-amber-100 bg-gradient-to-br from-amber-50 to-white",
-    iconClass: "bg-amber-100 text-amber-600",
-    valueClass: "text-amber-700",
-  },
-  {
-    title: "Trainer Assignment",
-    value: "6",
-    description: "Ready for assignment",
-    icon: UserPlus,
-    className:
-      "border-cyan-100 bg-gradient-to-br from-cyan-50 to-white",
-    iconClass: "bg-cyan-100 text-cyan-600",
-    valueClass: "text-cyan-700",
-  },
-  {
-    title: "Reports Pending",
-    value: "4",
-    description: "Awaiting preparation",
-    icon: FileCheck2,
-    className:
-      "border-rose-100 bg-gradient-to-br from-rose-50 to-white",
-    iconClass: "bg-rose-100 text-rose-600",
-    valueClass: "text-rose-700",
-  },
-]
+type RecentRequest = {
+  id: string;
+  requestNumber: string;
+  status: string;
+  createdAt: string;
+  submittedAt: string | null;
+  organisation: string | null;
+
+  client: {
+    id: string;
+    name: string;
+    email: string;
+    clientProfile?: {
+      organisation: string;
+    } | null;
+  };
+
+  programs: RequestProgram[];
+
+  trainerAssignments: {
+    id: string;
+    status: string;
+  }[];
+};
+
+type DashboardData = {
+  success: boolean;
+
+  stats: {
+    totalRequests: number;
+    newRequests: number;
+    verificationRequests: number;
+    trainerAssignmentRequests: number;
+    trainingRequests: number;
+    completedRequests: number;
+  };
+
+  workflow: {
+    verification: number;
+    tso: number;
+    pta: number;
+    taf: number;
+    trainer: number;
+    training: number;
+    reports: number;
+  };
+
+  today: {
+    requestsProcessed: number;
+    trainersAssigned: number;
+    completedRequests: number;
+  };
+
+  trainers: {
+    active: number;
+    withActiveAssignments: number;
+    withoutActiveAssignments: number;
+  };
+
+  recentRequests: RecentRequest[];
+};
+
+// ==========================================
+// HELPERS
+// ==========================================
+
+function formatDate(date: Date) {
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function formatTimeAgo(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+
+  const seconds = Math.max(
+    0,
+    Math.floor((Date.now() - date.getTime()) / 1000)
+  );
+
+  if (seconds < 60) return "Just now";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} day${days > 1 ? "s" : ""} ago`;
+
+  return formatDate(date);
+}
+
+function formatStatus(status: string) {
+  return status
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 
 function getStatusClasses(status: string) {
-  if (status === "Verification") {
-    return "border-0 bg-amber-50 text-amber-700 hover:bg-amber-50"
+  if (
+    status === "SUBMITTED" ||
+    status === "UNDER_REVIEW" ||
+    status.includes("VERIFICATION")
+  ) {
+    return "border-0 bg-amber-50 text-amber-700 hover:bg-amber-50";
   }
 
-  if (status === "TSO Pending") {
-    return "border-0 bg-blue-50 text-blue-700 hover:bg-blue-50"
+  if (status.includes("TSO")) {
+    return "border-0 bg-blue-50 text-blue-700 hover:bg-blue-50";
   }
 
-  if (status === "Trainer Assignment") {
-    return "border-0 bg-cyan-50 text-cyan-700 hover:bg-cyan-50"
+  
+
+  if (status.includes("TAF")) {
+    return "border-0 bg-indigo-50 text-indigo-700 hover:bg-indigo-50";
   }
 
-  return "border-0 bg-violet-50 text-violet-700 hover:bg-violet-50"
+  if (status.includes("TRAINER")) {
+    return "border-0 bg-cyan-50 text-cyan-700 hover:bg-cyan-50";
+  }
+
+  if (status === "TRAINING") {
+    return "border-0 bg-emerald-50 text-emerald-700 hover:bg-emerald-50";
+  }
+
+  if (status === "COMPLETED") {
+    return "border-0 bg-green-50 text-green-700 hover:bg-green-50";
+  }
+
+  if (status.includes("REJECTED") || status === "CANCELLED") {
+    return "border-0 bg-red-50 text-red-700 hover:bg-red-50";
+  }
+
+  return "border-0 bg-slate-100 text-slate-600 hover:bg-slate-100";
 }
 
-function getPriorityClasses(priority: string) {
-  if (priority === "High") {
-    return "text-red-600"
-  }
-
-  return "text-slate-500"
+function getOrganisation(request: RecentRequest) {
+  return (
+    request.organisation ||
+    request.client.clientProfile?.organisation ||
+    request.client.name
+  );
 }
+
+// ==========================================
+// DASHBOARD
+// ==========================================
 
 export default function SubAdminDashboardPage() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadDashboard = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch("/api/sub-admin/dashboard", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message || "Unable to load dashboard information."
+        );
+      }
+
+      setData(result);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load dashboard information."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  // ==========================================
+  // STAT CARDS
+  // ==========================================
+
+  const statCards = useMemo(() => {
+    const stats = data?.stats;
+
+    return [
+      {
+        title: "New Requests",
+        value: stats?.newRequests ?? 0,
+        description: "Awaiting processing",
+        icon: ClipboardCheck,
+        className:
+          "border-indigo-100 bg-gradient-to-br from-indigo-50 to-white",
+        iconClass: "bg-indigo-100 text-indigo-600",
+        valueClass: "text-indigo-700",
+      },
+      {
+        title: "Verification",
+        value: stats?.verificationRequests ?? 0,
+        description: "Under review",
+        icon: ShieldCheck,
+        className:
+          "border-amber-100 bg-gradient-to-br from-amber-50 to-white",
+        iconClass: "bg-amber-100 text-amber-600",
+        valueClass: "text-amber-700",
+      },
+      {
+        title: "Trainer Assignment",
+        value: stats?.trainerAssignmentRequests ?? 0,
+        description: "In trainer assignment stage",
+        icon: UserPlus,
+        className:
+          "border-cyan-100 bg-gradient-to-br from-cyan-50 to-white",
+        iconClass: "bg-cyan-100 text-cyan-600",
+        valueClass: "text-cyan-700",
+      },
+      {
+        title: "Completed Requests",
+        value: stats?.completedRequests ?? 0,
+        description: "Successfully completed",
+        icon: CheckCircle2,
+        className:
+          "border-emerald-100 bg-gradient-to-br from-emerald-50 to-white",
+        iconClass: "bg-emerald-100 text-emerald-600",
+        valueClass: "text-emerald-700",
+      },
+    ];
+  }, [data]);
+
+  // ==========================================
+  // WORKFLOW
+  // ==========================================
+
+  const workflowSteps = useMemo(() => {
+    const workflow = data?.workflow;
+
+    return [
+      {
+        label: "Verification",
+        count: workflow?.verification ?? 0,
+        icon: ClipboardCheck,
+      },
+      {
+        label: "TSO",
+        count: workflow?.tso ?? 0,
+        icon: FileText,
+      },
+      {
+        label: "PTA",
+        count: workflow?.pta ?? 0,
+        icon: FileCheck2,
+      },
+      
+      {
+        label: "TAF",
+        count: workflow?.taf ?? 0,
+        icon: FileCheck2,
+      },
+      {
+        label: "Trainer",
+        count: workflow?.trainer ?? 0,
+        icon: UserPlus,
+      },
+      {
+        label: "Training",
+        count: workflow?.training ?? 0,
+        icon: GraduationCap,
+      },
+    ];
+  }, [data]);
+
+  const today = useMemo(() => new Date(), []);
+
+  // ==========================================
+  // RENDER
+  // ==========================================
+
   return (
     <div className="mx-auto max-w-7xl space-y-8">
 
@@ -197,27 +357,59 @@ export default function SubAdminDashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-white px-4 py-3 shadow-sm">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-            <CalendarDays className="size-5" />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-white px-4 py-3 shadow-sm">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+              <CalendarDays className="size-5" />
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-400">
+                Today's Operations
+              </p>
+
+              <p className="text-sm font-semibold text-slate-800">
+                {formatDate(today)}
+              </p>
+            </div>
           </div>
 
-          <div>
-            <p className="text-xs text-slate-400">
-              Today's Operations
-            </p>
-
-            <p className="text-sm font-semibold text-slate-800">
-              27 October 2026
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={loadDashboard}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`size-4 ${loading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </button>
         </div>
       </div>
+
+      {/* ERROR */}
+      {error && (
+        <div
+          role="alert"
+          className="flex flex-col justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-center"
+        >
+          <p className="text-sm text-red-700">{error}</p>
+
+          <button
+            type="button"
+            onClick={loadDashboard}
+            className="text-sm font-semibold text-red-700 underline"
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
       {/* STAT CARDS */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {statCards.map((stat) => {
-          const Icon = stat.icon
+          const Icon = stat.icon;
 
           return (
             <Card
@@ -240,10 +432,8 @@ export default function SubAdminDashboardPage() {
                 </p>
 
                 <div className="mt-1 flex items-end justify-between gap-3">
-                  <p
-                    className={`text-3xl font-bold ${stat.valueClass}`}
-                  >
-                    {stat.value}
+                  <p className={`text-3xl font-bold ${stat.valueClass}`}>
+                    {loading ? "—" : stat.value}
                   </p>
 
                   <p className="pb-1 text-right text-xs text-slate-400">
@@ -252,8 +442,28 @@ export default function SubAdminDashboardPage() {
                 </div>
               </CardContent>
             </Card>
-          )
+          );
         })}
+      </div>
+
+      {/* TOTAL REQUESTS */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+        <div>
+          <p className="text-sm font-medium text-slate-500">
+            Total Service Requests
+          </p>
+          <p className="mt-1 text-2xl font-bold text-slate-900">
+            {loading ? "—" : data?.stats.totalRequests ?? 0}
+          </p>
+        </div>
+
+        <Link
+          href="/sub-admin/requests"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+        >
+          View Requests
+          <ArrowUpRight className="size-4" />
+        </Link>
       </div>
 
       {/* WORKFLOW */}
@@ -266,12 +476,14 @@ export default function SubAdminDashboardPage() {
               </CardTitle>
 
               <p className="mt-1 text-sm text-slate-500">
-                Current workload across the service request lifecycle.
+                Current records across the service request lifecycle.
               </p>
             </div>
 
             <Badge className="w-fit border-0 bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
-              39 Active Items
+              {loading
+                ? "Loading..."
+                : `${data?.stats.totalRequests ?? 0} Total Requests`}
             </Badge>
           </div>
         </CardHeader>
@@ -279,7 +491,7 @@ export default function SubAdminDashboardPage() {
         <CardContent className="p-5 md:p-6">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
             {workflowSteps.map((step, index) => {
-              const Icon = step.icon
+              const Icon = step.icon;
 
               return (
                 <div
@@ -297,7 +509,7 @@ export default function SubAdminDashboardPage() {
                       </p>
 
                       <p className="mt-0.5 text-xl font-bold text-slate-900">
-                        {step.count}
+                        {loading ? "—" : step.count}
                       </p>
                     </div>
                   </div>
@@ -306,7 +518,7 @@ export default function SubAdminDashboardPage() {
                     <ChevronRight className="hidden size-4 shrink-0 text-slate-300 xl:block" />
                   )}
                 </div>
-              )
+              );
             })}
           </div>
         </CardContent>
@@ -315,7 +527,7 @@ export default function SubAdminDashboardPage() {
       {/* MAIN GRID */}
       <div className="grid gap-6 lg:grid-cols-3">
 
-        {/* REQUEST QUEUE */}
+        {/* RECENT REQUESTS */}
         <Card className="overflow-hidden border-slate-200 bg-white shadow-sm lg:col-span-2">
           <CardHeader className="border-b border-slate-100">
             <div className="flex items-center justify-between gap-4">
@@ -325,7 +537,7 @@ export default function SubAdminDashboardPage() {
                 </CardTitle>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  Requests currently moving through operations.
+                  Latest requests retrieved from the database.
                 </p>
               </div>
 
@@ -340,73 +552,99 @@ export default function SubAdminDashboardPage() {
           </CardHeader>
 
           <CardContent className="p-0">
-            <div className="divide-y divide-slate-100">
-              {requests.map((request) => (
-                <Link
-                  key={request.id}
-                  href={`/sub-admin/requests/${request.id}`}
-                  className="group block p-5 transition-colors hover:bg-indigo-50/30"
-                >
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            {loading ? (
+              <div className="p-10 text-center text-sm text-slate-500">
+                Loading recent requests...
+              </div>
+            ) : !data?.recentRequests.length ? (
+              <div className="p-10 text-center">
+                <FileText className="mx-auto size-9 text-slate-300" />
 
-                    <div className="flex min-w-0 items-start gap-3">
-                      <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 transition-colors group-hover:bg-indigo-100">
-                        <FileText className="size-5" />
-                      </div>
+                <p className="mt-3 font-semibold text-slate-700">
+                  No service requests found
+                </p>
 
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold text-slate-800 group-hover:text-indigo-700">
-                            {request.client}
-                          </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Newly submitted requests will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {data.recentRequests.map((request) => {
+                  const programs = request.programs
+                    .map((item) => item.program.title)
+                    .filter(Boolean);
 
-                          <span
-                            className={`text-[11px] font-semibold ${getPriorityClasses(
-                              request.priority
-                            )}`}
-                          >
-                            {request.priority} Priority
-                          </span>
+                  const service =
+                    programs.length > 0
+                      ? programs.join(", ")
+                      : "No programme selected";
+
+                  const organisation = getOrganisation(request);
+
+                  return (
+                    <Link
+                      key={request.id}
+                      href={`/sub-admin/requests/${request.id}`}
+                      className="group block p-5 transition-colors hover:bg-indigo-50/30"
+                    >
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 transition-colors group-hover:bg-indigo-100">
+                            <FileText className="size-5" />
+                          </div>
+
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-800 group-hover:text-indigo-700">
+                              {organisation}
+                            </p>
+
+                            <p className="mt-1 truncate text-sm text-slate-500">
+                              {service}
+                            </p>
+
+                            <p className="mt-1 font-mono text-xs text-slate-400">
+                              {request.requestNumber}
+                            </p>
+
+                            <p className="mt-1 text-xs text-slate-400">
+                              Client: {request.client.name}
+                            </p>
+                          </div>
                         </div>
 
-                        <p className="mt-1 truncate text-sm text-slate-500">
-                          {request.service}
-                        </p>
+                        <div className="flex items-center justify-between gap-4 xl:justify-end">
+                          <div className="text-left xl:text-right">
+                            <Badge
+                              className={getStatusClasses(request.status)}
+                            >
+                              {formatStatus(request.status)}
+                            </Badge>
 
-                        <p className="mt-1 font-mono text-xs text-slate-400">
-                          {request.id}
-                        </p>
+                            <p className="mt-2 text-xs text-slate-400">
+                              {formatTimeAgo(
+                                request.submittedAt || request.createdAt
+                              )}
+                            </p>
+                          </div>
+
+                          <div className="flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors group-hover:border-indigo-200 group-hover:text-indigo-600">
+                            <ArrowRight className="size-4" />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-4 xl:justify-end">
-                      <div className="text-left xl:text-right">
-                        <Badge
-                          className={getStatusClasses(request.status)}
-                        >
-                          {request.status}
-                        </Badge>
-
-                        <p className="mt-2 text-xs text-slate-400">
-                          {request.submitted}
-                        </p>
-                      </div>
-
-                      <div className="flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors group-hover:border-indigo-200 group-hover:text-indigo-600">
-                        <ArrowRight className="size-4" />
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 
         {/* RIGHT COLUMN */}
         <div className="space-y-6">
 
-          {/* TODAY */}
+          {/* TODAY'S WORKLOAD */}
           <Card className="overflow-hidden border-indigo-100 bg-white shadow-sm">
             <div className="h-1.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-blue-500" />
 
@@ -416,12 +654,11 @@ export default function SubAdminDashboardPage() {
               </CardTitle>
 
               <p className="text-sm text-slate-500">
-                Operational activity for today.
+                Activity recorded today in the database.
               </p>
             </CardHeader>
 
             <CardContent className="space-y-4">
-
               <div className="flex items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
                 <div className="flex items-center gap-3">
                   <div className="flex size-9 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
@@ -429,12 +666,12 @@ export default function SubAdminDashboardPage() {
                   </div>
 
                   <span className="text-sm font-medium text-slate-700">
-                    Requests processed
+                    Request timeline entries
                   </span>
                 </div>
 
                 <span className="text-lg font-bold text-indigo-700">
-                  14
+                  {loading ? "—" : data?.today.requestsProcessed ?? 0}
                 </span>
               </div>
 
@@ -450,7 +687,7 @@ export default function SubAdminDashboardPage() {
                 </div>
 
                 <span className="text-lg font-bold text-cyan-700">
-                  5
+                  {loading ? "—" : data?.today.trainersAssigned ?? 0}
                 </span>
               </div>
 
@@ -461,28 +698,28 @@ export default function SubAdminDashboardPage() {
                   </div>
 
                   <span className="text-sm font-medium text-slate-700">
-                    Tasks completed
+                    Requests completed
                   </span>
                 </div>
 
                 <span className="text-lg font-bold text-emerald-700">
-                  21
+                  {loading ? "—" : data?.today.completedRequests ?? 0}
                 </span>
               </div>
             </CardContent>
           </Card>
 
-          {/* TRAINER AVAILABILITY */}
+          {/* TRAINER POOL */}
           <Card className="border-slate-200 bg-white shadow-sm">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base font-semibold text-slate-900">
-                    Trainer Availability
+                    Trainer Pool
                   </CardTitle>
 
                   <p className="mt-1 text-sm text-slate-500">
-                    Current trainer pool.
+                    Active trainer account summary.
                   </p>
                 </div>
 
@@ -492,34 +729,58 @@ export default function SubAdminDashboardPage() {
 
             <CardContent>
               <div className="flex items-center gap-4">
-                <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/20">
+                <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-lg shadow-indigo-500/20">
                   <Users className="size-7" />
                 </div>
 
                 <div>
                   <p className="text-3xl font-bold text-slate-900">
-                    18
+                    {loading ? "—" : data?.trainers.active ?? 0}
                   </p>
 
                   <p className="text-sm text-slate-500">
-                    Available trainers
+                    Active trainer accounts
                   </p>
                 </div>
               </div>
 
-              <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full w-[72%] rounded-full bg-gradient-to-r from-emerald-500 to-teal-500" />
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-cyan-50 p-3">
+                  <p className="text-xs text-cyan-700">
+                    With active assignments
+                  </p>
+
+                  <p className="mt-1 text-xl font-bold text-cyan-800">
+                    {loading
+                      ? "—"
+                      : data?.trainers.withActiveAssignments ?? 0}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-emerald-50 p-3">
+                  <p className="text-xs text-emerald-700">
+                    Without active assignments
+                  </p>
+
+                  <p className="mt-1 text-xl font-bold text-emerald-800">
+                    {loading
+                      ? "—"
+                      : data?.trainers.withoutActiveAssignments ?? 0}
+                  </p>
+                </div>
               </div>
 
-              <div className="mt-2 flex justify-between text-xs">
-                <span className="text-slate-400">
-                  72% available
-                </span>
+              <p className="mt-3 text-xs leading-5 text-slate-400">
+                Assignment counts do not confirm actual trainer availability.
+              </p>
 
-                <span className="font-medium text-emerald-600">
-                  Healthy capacity
-                </span>
-              </div>
+              <Link
+                href="/sub-admin/trainers"
+                className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+              >
+                Manage Trainers
+                <ArrowRight className="size-4" />
+              </Link>
             </CardContent>
           </Card>
         </div>
@@ -570,7 +831,7 @@ export default function SubAdminDashboardPage() {
               </p>
 
               <p className="mt-1 text-xs leading-5 text-slate-500">
-                Assign trainers to verified requests.
+                Assign trainers to eligible requests.
               </p>
             </Link>
 
@@ -604,7 +865,7 @@ export default function SubAdminDashboardPage() {
               </p>
 
               <p className="mt-1 text-xs leading-5 text-slate-500">
-                Prepare reports for Admin approval.
+                Open training and operational reports.
               </p>
             </Link>
           </div>
@@ -614,7 +875,6 @@ export default function SubAdminDashboardPage() {
       {/* OPERATIONS NOTE */}
       <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-600 via-violet-600 to-blue-600 p-5 text-white shadow-lg shadow-indigo-500/20">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-
           <div className="flex items-start gap-4">
             <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
               <ShieldCheck className="size-5" />
@@ -626,9 +886,8 @@ export default function SubAdminDashboardPage() {
               </p>
 
               <p className="mt-1 max-w-2xl text-sm leading-5 text-indigo-100">
-                Sub Admin manages the operational workflow and prepares
-                documents, assignments and reports. Final approval remains
-                with the Admin.
+                Sub Admin manages the operational workflow, documents and
+                trainer assignments. Final approval remains with the Admin.
               </p>
             </div>
           </div>
@@ -642,7 +901,6 @@ export default function SubAdminDashboardPage() {
           </Link>
         </div>
       </div>
-
     </div>
-  )
+  );
 }

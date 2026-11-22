@@ -72,7 +72,7 @@ export const navigationByRole: Record<UserRole, NavigationItem[]> = {
   SUB_ADMIN: [
     {
       title: "Dashboard",
-      href: "/sub-admin",
+      href: "/sub-admin/dashboard",
       icon: LayoutDashboard,
     },
     {
