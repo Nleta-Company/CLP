@@ -1,30 +1,89 @@
 
-"use client"
+"use client";
 
-import { usePathname } from "next/navigation"
-import Link from "next/link"
-import { ShieldCheck, Settings } from "lucide-react"
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
+import { ShieldCheck, Settings } from "lucide-react";
 
 import {
   Avatar,
   AvatarFallback,
-} from "@/components/ui/avatar"
+} from "@/components/ui/avatar";
 
-import { Separator } from "@/components/ui/separator"
+import { Separator } from "@/components/ui/separator";
 
 import {
   navigationByRole,
   type UserRole,
-} from "@/lib/navigation"
+} from "@/lib/navigation";
 
 interface AppSidebarProps {
-  role?: UserRole
+  role?: UserRole;
+}
+
+type LoggedInUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+};
+
+function getInitials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join("") || "U";
+}
+
+function formatRole(role: string) {
+  return role
+    .toLowerCase()
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 export function AppSidebar({
   role = "ADMIN",
 }: AppSidebarProps) {
-  const pathname = usePathname()
+  const pathname = usePathname();
+
+  const [user, setUser] = useState<LoggedInUser | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function fetchCurrentUser() {
+      try {
+        const response = await fetch("/api/auth/me", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success || !result.user) {
+          throw new Error("Unable to load user profile.");
+        }
+
+        if (active) {
+          setUser(result.user);
+        }
+      } catch (error) {
+        console.error("Sidebar user fetch error:", error);
+      }
+    }
+
+    fetchCurrentUser();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Hide Batch Management only for Sub Admin
   const navigation = navigationByRole[role].filter((item) => {
@@ -32,11 +91,16 @@ export function AppSidebar({
       role === "SUB_ADMIN" &&
       item.href === "/sub-admin/batches"
     ) {
-      return false
+      return false;
     }
 
-    return true
-  })
+    return true;
+  });
+
+  const displayName = user?.name || "Loading profile...";
+  const displayRole = user?.role
+    ? formatRole(user.role)
+    : formatRole(role);
 
   return (
     <aside
@@ -48,12 +112,14 @@ export function AppSidebar({
     >
       <div className="flex h-16 shrink-0 items-center px-6">
         <div className="flex items-center gap-3">
-          <div className="
-            flex size-10 shrink-0 items-center justify-center
-            rounded-xl bg-gradient-to-br from-indigo-600
-            via-violet-600 to-blue-500 text-white
-            shadow-lg shadow-indigo-500/25
-          ">
+          <div
+            className="
+              flex size-10 shrink-0 items-center justify-center
+              rounded-xl bg-gradient-to-br from-indigo-600
+              via-violet-600 to-blue-500 text-white
+              shadow-lg shadow-indigo-500/25
+            "
+          >
             <ShieldCheck className="size-5" />
           </div>
 
@@ -61,6 +127,7 @@ export function AppSidebar({
             <p className="truncate font-semibold leading-none text-slate-900">
               CLP Portal
             </p>
+
             <p className="mt-1 truncate text-xs text-slate-500">
               Corporate Learning
             </p>
@@ -73,9 +140,10 @@ export function AppSidebar({
       <nav className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin">
         <div className="space-y-1">
           {navigation.map((item) => {
-            const Icon = item.icon
+            const Icon = item.icon;
 
-            const isActive = pathname === item.href
+            // Only the exact current page is highlighted
+            const isActive = pathname === item.href;
 
             return (
               <Link
@@ -103,7 +171,7 @@ export function AppSidebar({
                   {item.title}
                 </span>
               </Link>
-            )
+            );
           })}
         </div>
       </nav>
@@ -111,28 +179,39 @@ export function AppSidebar({
       <Separator className="bg-indigo-100/70" />
 
       <div className="shrink-0 p-3">
-        <div className="
-          flex items-center gap-3 rounded-xl border
-          border-slate-200 bg-slate-50/80 p-3
-          transition-colors hover:border-indigo-100
-          hover:bg-indigo-50/50
-        ">
+        <div
+          className="
+            flex items-center gap-3 rounded-xl border
+            border-slate-200 bg-slate-50/80 p-3
+            transition-colors hover:border-indigo-100
+            hover:bg-indigo-50/50
+          "
+        >
           <Avatar className="size-9 shrink-0 ring-2 ring-indigo-100">
-            <AvatarFallback className="
-              bg-gradient-to-br from-indigo-600 to-violet-600
-              text-xs font-semibold text-white
-            ">
-              AD
+            <AvatarFallback
+              className="
+                bg-gradient-to-br from-indigo-600 to-violet-600
+                text-xs font-semibold text-white
+              "
+            >
+              {user ? getInitials(user.name) : "U"}
             </AvatarFallback>
           </Avatar>
 
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-slate-800">
-              Admin User
+              {displayName}
             </p>
+
             <p className="truncate text-xs text-slate-500">
-              Administrator
+              {displayRole}
             </p>
+
+            {user?.email && (
+              <p className="truncate text-[10px] text-slate-400">
+                {user.email}
+              </p>
+            )}
           </div>
 
           <button
@@ -149,5 +228,5 @@ export function AppSidebar({
         </div>
       </div>
     </aside>
-  )
+  );
 }

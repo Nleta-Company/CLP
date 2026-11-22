@@ -1,8 +1,8 @@
 
 import { NextResponse } from "next/server";
+
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
-
 
 export async function GET() {
   try {
@@ -10,14 +10,18 @@ export async function GET() {
 
     if (!session) {
       return NextResponse.json(
-        { success: false, message: "Unauthenticated." },
+        {
+          success: false,
+          message: "Unauthenticated.",
+        },
         { status: 401 }
       );
     }
 
-    // Verify current database account and active status.
     const user = await prisma.user.findUnique({
-      where: { id: session.userId },
+      where: {
+        id: session.userId,
+      },
       select: {
         id: true,
         name: true,
@@ -33,25 +37,39 @@ export async function GET() {
       user.role !== session.role
     ) {
       return NextResponse.json(
-        { success: false, message: "Session is no longer valid." },
+        {
+          success: false,
+          message: "Session is no longer valid.",
+        },
         { status: 401 }
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
+    return NextResponse.json(
+      {
+        success: true,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
       },
-    });
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      }
+    );
   } catch (error) {
     console.error("Current user API error:", error);
 
     return NextResponse.json(
-      { success: false, message: "Unable to verify session." },
+      {
+        success: false,
+        message: "Unable to verify session.",
+      },
       { status: 500 }
     );
   }
