@@ -139,11 +139,18 @@ export async function GET() {
       ).length,
     };
 
-    return NextResponse.json({
-      success: true,
-      stats,
-      assignments: formattedAssignments,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        stats,
+        assignments: formattedAssignments,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
   } catch (error) {
     console.error("Trainer Assignments Fetch API Error:", error);
 
@@ -157,10 +164,10 @@ export async function GET() {
  *
  * On ACCEPT:
  * - Automatically creates batches.
- * - Uses expectedBatches from RequestProgram.
- * - Distributes participant count across batches.
+ * - Distributes client-submitted participants across batches.
+ * - Copies participant details into BatchParticipant.
  * - Links batches to TrainerAssignment.
- * - Prevents duplicate batch creation.
+ * - Prevents duplicate participant creation.
  */
 export async function PATCH(request: NextRequest) {
   try {
@@ -255,6 +262,7 @@ export async function PATCH(request: NextRequest) {
 
         let createdBatchCount = 0;
         let linkedBatchCount = 0;
+        let copiedParticipantCount = 0;
 
         // 3. Automatically generate batches after acceptance.
         if (decision === "ACCEPT") {
@@ -266,12 +274,27 @@ export async function PATCH(request: NextRequest) {
                 ? { id: assignment.requestProgramId }
                 : {}),
             },
+
             include: {
               request: {
                 select: {
                   preferredDate: true,
                   alternateDate: true,
                   trainingLocation: true,
+                },
+              },
+
+              // Original participant details submitted by client.
+              participantsDetails: {
+                orderBy: {
+                  createdAt: "asc",
+                },
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  designation: true,
+                  phone: true,
                 },
               },
             },
@@ -284,6 +307,8 @@ export async function PATCH(request: NextRequest) {
           for (const requestProgram of requestPrograms) {
             const totalParticipants = requestProgram.participants;
             const expectedBatches = requestProgram.expectedBatches;
+            const participantDetails =
+              requestProgram.participantsDetails;
 
             if (
               !Number.isInteger(expectedBatches) ||
@@ -292,6 +317,11 @@ export async function PATCH(request: NextRequest) {
               totalParticipants < 0
             ) {
               throw new Error("INVALID_BATCH_CONFIGURATION");
+            }
+
+            // Do not create batches with missing client details.
+            if (participantDetails.length !== totalParticipants) {
+              throw new Error("PARTICIPANT_DETAILS_MISMATCH");
             }
 
             // If a specific batch was assigned, process only that batch.
@@ -322,6 +352,21 @@ export async function PATCH(request: NextRequest) {
               totalParticipants % expectedBatches;
 
             for (const batchNumber of batchNumbers) {
+              // Distribute participants evenly between batches.
+              const participantCount =
+                baseParticipants +
+                (batchNumber <= remainder ? 1 : 0);
+
+              const startIndex =
+                (batchNumber - 1) * baseParticipants +
+                Math.min(batchNumber - 1, remainder);
+
+              const batchParticipants = participantDetails.slice(
+                startIndex,
+                startIndex + participantCount
+              );
+
+              // Check whether batch already exists.
               const existingBatch = await tx.batch.findUnique({
                 where: {
                   requestProgramId_batchNumber: {
@@ -329,7 +374,22 @@ export async function PATCH(request: NextRequest) {
                     batchNumber,
                   },
                 },
+
+                include: {
+                  participantsList: {
+                    select: {
+                      id: true,
+                      name: true,
+                      email: true,
+                      phone: true,
+                      designation: true,
+                    },
+                  },
+                },
               });
+
+              let batchId: string;
+              let existingParticipantCount = 0;
 
               if (existingBatch) {
                 // Never overwrite a batch assigned to another trainer.
@@ -340,7 +400,7 @@ export async function PATCH(request: NextRequest) {
                   throw new Error("BATCH_ALREADY_ASSIGNED");
                 }
 
-                // Link an existing unassigned batch to this assignment.
+                // Link existing unassigned batch.
                 if (!existingBatch.trainerAssignmentId) {
                   await tx.batch.update({
                     where: {
@@ -354,38 +414,63 @@ export async function PATCH(request: NextRequest) {
                   linkedBatchCount++;
                 }
 
-                continue;
+                batchId = existingBatch.id;
+                existingParticipantCount =
+                  existingBatch.participantsList.length;
+              } else {
+                // Create a new batch.
+                const createdBatch = await tx.batch.create({
+                  data: {
+                    requestProgramId: requestProgram.id,
+                    trainerAssignmentId: assignment.id,
+
+                    batchNumber,
+                    participants: participantCount,
+
+                    startDate:
+                      requestProgram.request.preferredDate ||
+                      requestProgram.request.alternateDate ||
+                      null,
+
+                    mode: requestProgram.preferredMode,
+
+                    location:
+                      requestProgram.request.trainingLocation,
+
+                    status: "PLANNED",
+
+                    createdById: auth.user.id,
+                  },
+                });
+
+                batchId = createdBatch.id;
+                createdBatchCount++;
               }
 
-              const participantCount =
-                baseParticipants +
-                (batchNumber <= remainder ? 1 : 0);
+              // Existing participant records are not overwritten.
+              // Copy only when the batch has no participants.
+              if (existingParticipantCount === 0) {
+                if (batchParticipants.length > 0) {
+                  await tx.batchParticipant.createMany({
+                    data: batchParticipants.map((participant) => ({
+                      batchId,
 
-              await tx.batch.create({
-                data: {
-                  requestProgramId: requestProgram.id,
-                  trainerAssignmentId: assignment.id,
+                      name: participant.name,
+                      email: participant.email,
+                      phone: participant.phone,
+                      designation: participant.designation,
+                    })),
+                  });
 
-                  batchNumber,
-                  participants: participantCount,
-
-                  startDate:
-                    requestProgram.request.preferredDate ||
-                    requestProgram.request.alternateDate ||
-                    null,
-
-                  mode: requestProgram.preferredMode,
-
-                  location:
-                    requestProgram.request.trainingLocation,
-
-                  status: "PLANNED",
-
-                  createdById: auth.user.id,
-                },
-              });
-
-              createdBatchCount++;
+                  copiedParticipantCount += batchParticipants.length;
+                }
+              } else {
+                // Check whether an existing batch has the expected
+                // participant count. Do not silently leave it incomplete.
+                if (existingParticipantCount !== participantCount) {
+                  throw new Error("EXISTING_BATCH_PARTICIPANTS_MISMATCH");
+                }
+              }
             }
           }
         }
@@ -399,7 +484,7 @@ export async function PATCH(request: NextRequest) {
 
             remarks:
               decision === "ACCEPT"
-                ? `Trainer accepted assignment ${assignment.id}. ${createdBatchCount} batches created and ${linkedBatchCount} existing batches linked.`
+                ? `Trainer accepted assignment ${assignment.id}. ${createdBatchCount} batches created, ${linkedBatchCount} existing batches linked and ${copiedParticipantCount} participant records copied.`
                 : `Trainer rejected assignment ${assignment.id}. Reason: ${remarks!.trim()}`,
           },
         });
@@ -435,6 +520,7 @@ export async function PATCH(request: NextRequest) {
 
           createdBatchCount,
           linkedBatchCount,
+          copiedParticipantCount,
         };
       },
       {
@@ -443,21 +529,32 @@ export async function PATCH(request: NextRequest) {
       }
     );
 
-    return NextResponse.json({
-      success: true,
+    return NextResponse.json(
+      {
+        success: true,
 
-      message:
-        decision === "ACCEPT"
-          ? "Assignment accepted and batches generated successfully."
-          : "Assignment rejected successfully.",
+        message:
+          decision === "ACCEPT"
+            ? "Assignment accepted and batches generated successfully."
+            : "Assignment rejected successfully.",
 
-      assignment: result.assignment,
+        assignment: result.assignment,
 
-      batches: {
-        created: result.createdBatchCount,
-        linked: result.linkedBatchCount,
+        batches: {
+          created: result.createdBatchCount,
+          linked: result.linkedBatchCount,
+        },
+
+        participants: {
+          copied: result.copiedParticipantCount,
+        },
       },
-    });
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
   } catch (error) {
     if (error instanceof Error) {
       const known: Record<
@@ -486,6 +583,12 @@ export async function PATCH(request: NextRequest) {
           status: 400,
         },
 
+        PARTICIPANT_DETAILS_MISMATCH: {
+          message:
+            "Participant details are missing or do not match the requested participant count. Please check the client-submitted participant details.",
+          status: 400,
+        },
+
         INVALID_ASSIGNED_BATCH_NUMBER: {
           message:
             "The assigned batch number is outside the expected batch range.",
@@ -495,6 +598,12 @@ export async function PATCH(request: NextRequest) {
         BATCH_ALREADY_ASSIGNED: {
           message:
             "One or more batches are already assigned to another trainer.",
+          status: 409,
+        },
+
+        EXISTING_BATCH_PARTICIPANTS_MISMATCH: {
+          message:
+            "An existing batch has an incomplete or incorrect participant list. Please reconcile its participant records before accepting this assignment.",
           status: 409,
         },
       };

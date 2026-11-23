@@ -25,11 +25,19 @@ import {
   type TrainingProgram,
 } from "@/lib/data/training-programs";
 
+interface ParticipantDetail {
+  name: string;
+  email: string;
+  designation: string;
+  phone: string;
+}
+
 interface ProgramRequirement {
   code: string;
   participants: string;
   batches: string;
   mode: "ON" | "HY" | "OF";
+  participantsDetails: ParticipantDetail[];
 }
 
 interface ClientForm {
@@ -116,6 +124,7 @@ export default function ClientServiceInformationPage() {
               participants: "",
               batches: "1",
               mode: program.mode,
+              participantsDetails: [],
             }))
           );
         } else {
@@ -183,10 +192,10 @@ export default function ClientServiceInformationPage() {
     }));
   }
 
-  function updateRequirement(
+  function updateRequirement<K extends "participants" | "batches" | "mode">(
     code: string,
-    field: keyof ProgramRequirement,
-    value: string
+    field: K,
+    value: ProgramRequirement[K]
   ) {
     setRequirements((previous) =>
       previous.map((item) =>
@@ -194,6 +203,59 @@ export default function ClientServiceInformationPage() {
           ? { ...item, [field]: value }
           : item
       )
+    );
+  }
+
+  function updateParticipantCount(code: string, value: string) {
+    const parsedCount = Number(value);
+    const count = value === "" ? 0 : Math.max(0, Math.min(500, parsedCount || 0));
+
+    setRequirements((previous) =>
+      previous.map((item) => {
+        if (item.code !== code) return item;
+
+        const currentDetails = item.participantsDetails || [];
+        const updatedDetails = Array.from(
+          { length: count },
+          (_, index) =>
+            currentDetails[index] || {
+              name: "",
+              email: "",
+              designation: "",
+              phone: "",
+            }
+        );
+
+        return {
+          ...item,
+          participants: value,
+          participantsDetails: updatedDetails,
+        };
+      })
+    );
+  }
+
+  function updateParticipantDetail(
+    code: string,
+    index: number,
+    field: keyof ParticipantDetail,
+    value: string
+  ) {
+    setRequirements((previous) =>
+      previous.map((item) => {
+        if (item.code !== code) return item;
+
+        const updatedDetails = [...(item.participantsDetails || [])];
+        updatedDetails[index] = {
+          ...updatedDetails[index],
+          [field]: value,
+        };
+
+        return {
+          ...item,
+          participantsDetails: updatedDetails,
+        };
+      })
     );
   }
 
@@ -236,6 +298,26 @@ export default function ClientServiceInformationPage() {
     if (incomplete) {
       setError(
         "Please enter valid participant and batch details for every selected programme."
+      );
+      return;
+    }
+
+    const incompleteParticipants = requirements.some((item) => {
+      const expectedCount = Number(item.participants);
+      const details = item.participantsDetails || [];
+
+      return (
+        details.length !== expectedCount ||
+        details.some(
+          (participant) =>
+            !participant.name.trim() || !participant.designation.trim()
+        )
+      );
+    });
+
+    if (incompleteParticipants) {
+      setError(
+        "Please enter Full Name and Designation for every participant in all selected programmes."
       );
       return;
     }
@@ -585,12 +667,9 @@ export default function ClientServiceInformationPage() {
                           min="1"
                           className={inputClass}
                           value={requirement.participants}
+                          max="500"
                           onChange={(e) =>
-                            updateRequirement(
-                              program.code,
-                              "participants",
-                              e.target.value
-                            )
+                            updateParticipantCount(program.code, e.target.value)
                           }
                           placeholder="e.g. 25"
                         />
@@ -625,7 +704,7 @@ export default function ClientServiceInformationPage() {
                             updateRequirement(
                               program.code,
                               "mode",
-                              e.target.value
+                              e.target.value as ProgramRequirement["mode"]
                             )
                           }
                         >
@@ -635,6 +714,115 @@ export default function ClientServiceInformationPage() {
                         </select>
                       </label>
                     </div>
+
+                    {Number(requirement.participants) > 0 && (
+                      <div className="mt-6 space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                          <div>
+                            <h4 className="font-semibold text-slate-900">
+                              Participant Details
+                            </h4>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Enter details for every participant in this programme.
+                            </p>
+                          </div>
+
+                          <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
+                            {requirement.participantsDetails.length} Participants
+                          </Badge>
+                        </div>
+
+                        {requirement.participantsDetails.map((participant, index) => (
+                          <div
+                            key={`${program.code}-${index}`}
+                            className="rounded-xl border border-slate-200 bg-white p-4"
+                          >
+                            <div className="mb-4 flex items-center justify-between">
+                              <h5 className="font-semibold text-slate-800">
+                                Participant {index + 1}
+                              </h5>
+                              <Badge variant="outline">{program.code}</Badge>
+                            </div>
+
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <label className={labelClass}>
+                                Full Name *
+                                <input
+                                  required
+                                  type="text"
+                                  className={inputClass}
+                                  value={participant.name}
+                                  onChange={(e) =>
+                                    updateParticipantDetail(
+                                      program.code,
+                                      index,
+                                      "name",
+                                      e.target.value
+                                    )
+                                  }
+                                  placeholder="Enter full name"
+                                />
+                              </label>
+
+                              <label className={labelClass}>
+                                Email ID
+                                <input
+                                  type="email"
+                                  className={inputClass}
+                                  value={participant.email}
+                                  onChange={(e) =>
+                                    updateParticipantDetail(
+                                      program.code,
+                                      index,
+                                      "email",
+                                      e.target.value
+                                    )
+                                  }
+                                  placeholder="Enter email ID (optional)"
+                                />
+                              </label>
+
+                              <label className={labelClass}>
+                                Designation *
+                                <input
+                                  required
+                                  type="text"
+                                  className={inputClass}
+                                  value={participant.designation}
+                                  onChange={(e) =>
+                                    updateParticipantDetail(
+                                      program.code,
+                                      index,
+                                      "designation",
+                                      e.target.value
+                                    )
+                                  }
+                                  placeholder="e.g. Safety Officer"
+                                />
+                              </label>
+
+                              <label className={labelClass}>
+                                Mobile Number
+                                <input
+                                  type="tel"
+                                  className={inputClass}
+                                  value={participant.phone}
+                                  onChange={(e) =>
+                                    updateParticipantDetail(
+                                      program.code,
+                                      index,
+                                      "phone",
+                                      e.target.value
+                                    )
+                                  }
+                                  placeholder="Enter mobile number (optional)"
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     <p className="mt-3 text-xs text-slate-500">
                       Programme reference mode: {program.mode}. Final delivery

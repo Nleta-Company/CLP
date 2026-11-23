@@ -21,6 +21,7 @@ type Participant = {
   name: string;
   email?: string | null;
   phone?: string | null;
+  designation?: string | null;
   employeeId?: string | null;
 };
 
@@ -510,7 +511,7 @@ export default function TrainerBatchesPage() {
                   No participants found
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Participants need to be added to this batch by Sub Admin.
+                  Participant details will appear here after they are submitted by the client and copied into this batch.
                 </p>
               </div>
             ) : (
@@ -552,16 +553,37 @@ export default function TrainerBatchesPage() {
                               <p className="font-semibold text-slate-900">
                                 {participant.name}
                               </p>
-                              <p className="mt-1 text-xs text-slate-500">
-                                {participant.employeeId
-                                  ? `ID: ${participant.employeeId}`
-                                  : participant.email || "No contact details"}
-                              </p>
-                              {participant.phone && (
-                                <p className="mt-1 text-xs text-slate-500">
-                                  {participant.phone}
-                                </p>
-                              )}
+                              <div className="mt-1 space-y-1 text-xs text-slate-500">
+                                {participant.designation && (
+                                  <p>
+                                    <span className="font-semibold text-slate-600">
+                                      Designation:
+                                    </span>{" "}
+                                    {participant.designation}
+                                  </p>
+                                )}
+                                {participant.email && (
+                                  <p>
+                                    <span className="font-semibold text-slate-600">
+                                      Email:
+                                    </span>{" "}
+                                    {participant.email}
+                                  </p>
+                                )}
+                                {participant.phone && (
+                                  <p>
+                                    <span className="font-semibold text-slate-600">
+                                      Mobile:
+                                    </span>{" "}
+                                    {participant.phone}
+                                  </p>
+                                )}
+                                {!participant.designation &&
+                                  !participant.email &&
+                                  !participant.phone && (
+                                    <p>No additional participant details</p>
+                                  )}
+                              </div>
                             </div>
                           </div>
 

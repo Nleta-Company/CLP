@@ -42,6 +42,16 @@ export async function GET(
                                 mode: true,
                             },
                         },
+                        participantsDetails: {
+                            orderBy: { createdAt: "asc" },
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                designation: true,
+                                phone: true,
+                            },
+                        },
                     },
                 },
 
@@ -139,6 +149,13 @@ export async function GET(
                         mode: item.preferredMode,
                         participants: item.participants,
                         batches: item.expectedBatches,
+                        participantsDetails: item.participantsDetails.map((participant) => ({
+                            id: participant.id,
+                            name: participant.name,
+                            email: participant.email,
+                            designation: participant.designation,
+                            phone: participant.phone,
+                        })),
                     })),
 
                     totalParticipants: serviceRequest.programs.reduce(

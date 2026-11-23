@@ -1,13 +1,20 @@
+
+"use client"
+
+import { useEffect, useState } from "react"
 import {
   ArrowUpRight,
   CheckCircle2,
-  ChevronRight,
   ClipboardCheck,
   CreditCard,
-  FileCheck2,
   FileText,
-  TrendingUp,
   Users,
+  GraduationCap,
+  Layers,
+  FileCheck,
+  RefreshCw,
+  AlertCircle,
+  Activity,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -20,87 +27,198 @@ import {
 
 import { DashboardShell } from "@/components/layout/dashboard-shell"
 
-const stats = [
-  {
-    title: "Pending Requests",
-    value: "24",
-    description: "Requires attention",
-    icon: FileText,
-    iconClass: "bg-blue-100 text-blue-600",
-    accentClass: "bg-blue-500",
-    cardClass:
-      "border-blue-100 hover:border-blue-200 hover:shadow-blue-100/60",
-  },
-  {
-    title: "Pending Approvals",
-    value: "8",
-    description: "Awaiting your review",
-    icon: ClipboardCheck,
-    iconClass: "bg-violet-100 text-violet-600",
-    accentClass: "bg-violet-500",
-    cardClass:
-      "border-violet-100 hover:border-violet-200 hover:shadow-violet-100/60",
-  },
-  {
-    title: "Payment Verification",
-    value: "5",
-    description: "Pending verification",
-    icon: CreditCard,
-    iconClass: "bg-amber-100 text-amber-600",
-    accentClass: "bg-amber-500",
-    cardClass:
-      "border-amber-100 hover:border-amber-200 hover:shadow-amber-100/60",
-  },
-  {
-    title: "Certificates",
-    value: "12",
-    description: "Awaiting approval",
-    icon: FileCheck2,
-    iconClass: "bg-emerald-100 text-emerald-600",
-    accentClass: "bg-emerald-500",
-    cardClass:
-      "border-emerald-100 hover:border-emerald-200 hover:shadow-emerald-100/60",
-  },
-]
+type ActivityItem = {
+  id: string
+  status: string
+  remarks: string | null
+  createdAt: string
+  actor: {
+    name: string
+  } | null
+  request: {
+    requestNumber: string
+    organisation: string | null
+  }
+}
 
-const approvals = [
-  {
-    id: "PAY-102",
-    type: "Payment Verification",
-    client: "ABC Manufacturing",
-    status: "Pending",
-    icon: CreditCard,
-    iconClass: "bg-amber-100 text-amber-600",
-    time: "10 min ago",
-  },
-  {
-    id: "REP-204",
-    type: "Training Report",
-    client: "XYZ Industries",
-    status: "Pending",
-    icon: FileCheck2,
-    iconClass: "bg-violet-100 text-violet-600",
-    time: "32 min ago",
-  },
-  {
-    id: "CERT-089",
-    type: "Certificate Approval",
-    client: "Global Solutions",
-    status: "Pending",
-    icon: CheckCircle2,
-    iconClass: "bg-emerald-100 text-emerald-600",
-    time: "1 hour ago",
-  },
-]
+type DashboardData = {
+  pendingRequests: number
+  pendingApprovals: number
+  paymentVerification: number
+  activeClients: number
+  activeTrainers: number
+  activeRequests: number
+  completedThisMonth: number
+  totalBatches: number
+  totalParticipants: number
+  totalAtrReports: number
+  recentActivity: ActivityItem[]
+}
+
+const emptyData: DashboardData = {
+  pendingRequests: 0,
+  pendingApprovals: 0,
+  paymentVerification: 0,
+  activeClients: 0,
+  activeTrainers: 0,
+  activeRequests: 0,
+  completedThisMonth: 0,
+  totalBatches: 0,
+  totalParticipants: 0,
+  totalAtrReports: 0,
+  recentActivity: [],
+}
+
+function formatDate(date: string) {
+  return new Date(date).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function formatStatus(status: string) {
+  return status
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
 
 export default function AdminDashboard() {
+  const [data, setData] = useState<DashboardData>(emptyData)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+
+  async function loadDashboard() {
+    try {
+      setLoading(true)
+      setError("")
+
+      const response = await fetch("/api/admin/dashboard", {
+        method: "GET",
+        cache: "no-store",
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message || "Unable to load dashboard data."
+        )
+      }
+
+      setData({
+        ...emptyData,
+        ...result.data,
+      })
+    } catch (err) {
+      console.error("Dashboard loading error:", err)
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load dashboard data."
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadDashboard()
+  }, [])
+
+  const stats = [
+    {
+      title: "Pending Requests",
+      value: data.pendingRequests,
+      description: "Requests awaiting review",
+      icon: FileText,
+      iconClass: "bg-blue-100 text-blue-600",
+      accentClass: "bg-blue-500",
+      cardClass: "border-blue-100",
+    },
+    {
+      title: "Pending Approvals",
+      value: data.pendingApprovals,
+      description: "Awaiting client decisions",
+      icon: ClipboardCheck,
+      iconClass: "bg-violet-100 text-violet-600",
+      accentClass: "bg-violet-500",
+      cardClass: "border-violet-100",
+    },
+    {
+      title: "Payment Verification",
+      value: data.paymentVerification,
+      description: "Payments awaiting verification",
+      icon: CreditCard,
+      iconClass: "bg-amber-100 text-amber-600",
+      accentClass: "bg-amber-500",
+      cardClass: "border-amber-100",
+    },
+    {
+      title: "Completed This Month",
+      value: data.completedThisMonth,
+      description: "Completed service requests",
+      icon: CheckCircle2,
+      iconClass: "bg-emerald-100 text-emerald-600",
+      accentClass: "bg-emerald-500",
+      cardClass: "border-emerald-100",
+    },
+  ]
+
+  const overview = [
+    {
+      title: "Active Clients",
+      value: data.activeClients,
+      icon: Users,
+      color: "blue",
+    },
+    {
+      title: "Active Trainers",
+      value: data.activeTrainers,
+      icon: GraduationCap,
+      color: "violet",
+    },
+    {
+      title: "Active Requests",
+      value: data.activeRequests,
+      icon: FileText,
+      color: "amber",
+    },
+    {
+      title: "Total Batches",
+      value: data.totalBatches,
+      icon: Layers,
+      color: "emerald",
+    },
+    {
+      title: "Participants",
+      value: data.totalParticipants,
+      icon: Users,
+      color: "blue",
+    },
+    {
+      title: "ATR-01 Reports",
+      value: data.totalAtrReports,
+      icon: FileCheck,
+      color: "violet",
+    },
+  ]
+
+  const colorClasses: Record<string, string> = {
+    blue: "border-blue-100 bg-blue-50/50 text-blue-600",
+    violet: "border-violet-100 bg-violet-50/50 text-violet-600",
+    amber: "border-amber-100 bg-amber-50/50 text-amber-600",
+    emerald: "border-emerald-100 bg-emerald-50/50 text-emerald-600",
+  }
+
   return (
     <DashboardShell role="ADMIN">
       <div className="space-y-8">
 
-        {/* =====================================================
-            HEADER
-        ====================================================== */}
+        {/* HEADER */}
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
@@ -109,34 +227,53 @@ export default function AdminDashboard() {
             </div>
 
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
-              Good morning, Admin
+              Admin Dashboard
             </h1>
 
-            <p className="mt-2 max-w-2xl text-sm text-slate-500 md:text-base">
-              Here&apos;s an overview of your CLP operations and pending
-              approvals.
+            <p className="mt-2 text-sm text-slate-500 md:text-base">
+              Live overview of your CLP Portal operations.
             </p>
           </div>
 
-          {/* Date / status */}
-          <div className="hidden rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm md:block">
-            <p className="text-xs font-medium text-slate-400">
-              SYSTEM STATUS
-            </p>
-
-            <div className="mt-1 flex items-center gap-2">
-              <span className="size-2 rounded-full bg-emerald-500" />
-
-              <span className="text-sm font-semibold text-slate-700">
-                All systems operational
-              </span>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={loadDashboard}
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh Data
+          </button>
         </div>
 
-        {/* =====================================================
-            STATS
-        ====================================================== */}
+        {/* ERROR STATE */}
+        {error && (
+          <div className="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-600" />
+              <div>
+                <p className="font-semibold text-red-800">
+                  Dashboard data unavailable
+                </p>
+                <p className="mt-1 text-sm text-red-700">
+                  {error}
+                </p>
+                <p className="mt-1 text-xs text-red-600">
+                  Showing no figures until the database response is available.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={loadDashboard}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+            >
+              Try Again
+            </button>
+          </div>
+        )}
+
+        {/* MAIN STATS */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {stats.map((stat) => {
             const Icon = stat.icon
@@ -144,154 +281,126 @@ export default function AdminDashboard() {
             return (
               <Card
                 key={stat.title}
-                className={`group relative overflow-hidden bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${stat.cardClass}`}
+                className={`group relative overflow-hidden bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg ${stat.cardClass}`}
               >
-                {/* Top accent */}
-                <div
-                  className={`absolute inset-x-0 top-0 h-1 ${stat.accentClass}`}
-                />
+                <div className={`absolute inset-x-0 top-0 h-1 ${stat.accentClass}`} />
 
                 <CardHeader className="flex flex-row items-start justify-between pb-3 pt-6">
-                  <div>
-                    <CardTitle className="text-sm font-medium text-slate-500">
-                      {stat.title}
-                    </CardTitle>
-                  </div>
+                  <CardTitle className="text-sm font-medium text-slate-500">
+                    {stat.title}
+                  </CardTitle>
 
-                  <div
-                    className={`rounded-xl p-2.5 transition-transform duration-200 group-hover:scale-105 ${stat.iconClass}`}
-                  >
+                  <div className={`rounded-xl p-2.5 ${stat.iconClass}`}>
                     <Icon className="size-5" />
                   </div>
                 </CardHeader>
 
                 <CardContent>
                   <div className="text-3xl font-bold tracking-tight text-slate-900">
-                    {stat.value}
+                    {loading ? "—" : stat.value}
                   </div>
 
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <TrendingUp className="size-3.5 text-emerald-500" />
-
-                    <p className="text-xs font-medium text-slate-500">
-                      {stat.description}
-                    </p>
-                  </div>
+                  <p className="mt-2 text-xs font-medium text-slate-500">
+                    {stat.description}
+                  </p>
                 </CardContent>
               </Card>
             )
           })}
         </div>
 
-        {/* =====================================================
-            MAIN CONTENT
-        ====================================================== */}
+        {/* MAIN CONTENT */}
         <div className="grid gap-6 lg:grid-cols-3">
 
-          {/* ===================================================
-              APPROVAL QUEUE
-          ==================================================== */}
+          {/* RECENT ACTIVITY */}
           <Card className="overflow-hidden border-indigo-100 bg-white shadow-sm lg:col-span-2">
             <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-indigo-50/70 to-violet-50/40">
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
                     <div className="rounded-lg bg-indigo-100 p-2 text-indigo-600">
-                      <ClipboardCheck className="size-4" />
+                      <Activity className="size-4" />
                     </div>
 
                     <CardTitle className="text-base font-semibold text-slate-900">
-                      Pending Approvals
+                      Recent Activity
                     </CardTitle>
                   </div>
 
                   <p className="mt-2 text-sm text-slate-500">
-                    Items waiting for your final approval.
+                    Latest recorded request timeline updates.
                   </p>
                 </div>
 
-                <Badge
-                  variant="secondary"
-                  className="border-0 bg-indigo-100 px-3 py-1 text-indigo-700"
-                >
-                  8 Pending
+                <Badge variant="secondary">
+                  {loading ? "Loading" : `${data.recentActivity.length} Records`}
                 </Badge>
               </div>
             </CardHeader>
 
             <CardContent className="p-0">
-              <div className="divide-y divide-slate-100">
-                {approvals.map((approval) => {
-                  const Icon = approval.icon
-
-                  return (
+              {loading ? (
+                <div className="p-8 text-center text-sm text-slate-500">
+                  Loading recent activity...
+                </div>
+              ) : data.recentActivity.length === 0 ? (
+                <div className="p-8 text-center">
+                  <Activity className="mx-auto size-8 text-slate-300" />
+                  <p className="mt-3 font-medium text-slate-700">
+                    No activity recorded yet
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Actual request activity will appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {data.recentActivity.map((item) => (
                     <div
-                      key={approval.id}
-                      className="group flex items-center justify-between gap-4 px-6 py-5 transition-colors hover:bg-indigo-50/40"
+                      key={item.id}
+                      className="flex items-start gap-4 px-6 py-5 transition-colors hover:bg-indigo-50/40"
                     >
-                      <div className="flex min-w-0 items-center gap-4">
-                        {/* Icon */}
-                        <div
-                          className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${approval.iconClass}`}
-                        >
-                          <Icon className="size-5" />
-                        </div>
-
-                        {/* Information */}
-                        <div className="min-w-0">
-                          <p className="font-semibold text-slate-800">
-                            {approval.type}
-                          </p>
-
-                          <p className="mt-1 text-sm text-slate-500">
-                            {approval.id} · {approval.client}
-                          </p>
-
-                          <p className="mt-1 text-xs text-slate-400">
-                            {approval.time}
-                          </p>
-                        </div>
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+                        <Activity className="size-5" />
                       </div>
 
-                      <div className="flex shrink-0 items-center gap-3">
-                        <Badge className="hidden border-0 bg-amber-50 text-amber-700 hover:bg-amber-50 sm:inline-flex">
-                          {approval.status}
-                        </Badge>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-800">
+                            {formatStatus(item.status)}
+                          </p>
+                          <Badge variant="outline">
+                            {item.request.requestNumber}
+                          </Badge>
+                        </div>
 
-                        <button
-                          type="button"
-                          className="flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
-                          aria-label={`Open ${approval.type}`}
-                        >
-                          <ArrowUpRight className="size-4" />
-                        </button>
+                        <p className="mt-1 text-sm text-slate-500">
+                          {item.request.organisation || "Organisation not specified"}
+                        </p>
+
+                        {item.remarks && (
+                          <p className="mt-1 text-sm text-slate-600">
+                            {item.remarks}
+                          </p>
+                        )}
+
+                        <p className="mt-2 text-xs text-slate-400">
+                          {item.actor?.name || "System"} · {formatDate(item.createdAt)}
+                        </p>
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-
-              {/* View all */}
-              <div className="border-t border-slate-100 bg-slate-50/60 px-6 py-3">
-                <button
-                  type="button"
-                  className="flex items-center gap-1 text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-700"
-                >
-                  View all approvals
-                  <ChevronRight className="size-4" />
-                </button>
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* ===================================================
-              QUICK OVERVIEW
-          ==================================================== */}
+          {/* QUICK OVERVIEW */}
           <Card className="overflow-hidden border-slate-200 bg-white shadow-sm">
             <CardHeader>
               <div className="flex items-center gap-2">
                 <div className="rounded-lg bg-blue-100 p-2 text-blue-600">
-                  <TrendingUp className="size-4" />
+                  <Activity className="size-4" />
                 </div>
 
                 <CardTitle className="text-base font-semibold text-slate-900">
@@ -300,126 +409,64 @@ export default function AdminDashboard() {
               </div>
 
               <p className="mt-1 text-sm text-slate-500">
-                Current portal activity.
+                Actual portal records.
               </p>
             </CardHeader>
 
             <CardContent className="space-y-3">
-              {/* Active Clients */}
-              <div className="group flex items-center gap-4 rounded-xl border border-blue-100 bg-blue-50/50 p-4 transition-colors hover:bg-blue-50">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-                  <Users className="size-5" />
-                </div>
+              {overview.map((item) => {
+                const Icon = item.icon
 
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-800">
-                    Active Clients
-                  </p>
+                return (
+                  <div
+                    key={item.title}
+                    className={`flex items-center gap-3 rounded-xl border p-3 ${colorClasses[item.color]}`}
+                  >
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white/80">
+                      <Icon className="size-5" />
+                    </div>
 
-                  <p className="mt-0.5 text-sm text-slate-500">
-                    48 clients
-                  </p>
-                </div>
-
-                <span className="ml-auto text-xs font-semibold text-blue-600">
-                  +8%
-                </span>
-              </div>
-
-              {/* Active Requests */}
-              <div className="group flex items-center gap-4 rounded-xl border border-violet-100 bg-violet-50/50 p-4 transition-colors hover:bg-violet-50">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
-                  <FileText className="size-5" />
-                </div>
-
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-800">
-                    Active Requests
-                  </p>
-
-                  <p className="mt-0.5 text-sm text-slate-500">
-                    24 requests
-                  </p>
-                </div>
-
-                <span className="ml-auto text-xs font-semibold text-violet-600">
-                  +12%
-                </span>
-              </div>
-
-              {/* Completed */}
-              <div className="group flex items-center gap-4 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 transition-colors hover:bg-emerald-50">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
-                  <CheckCircle2 className="size-5" />
-                </div>
-
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-800">
-                    Completed This Month
-                  </p>
-
-                  <p className="mt-0.5 text-sm text-slate-500">
-                    31 services
-                  </p>
-                </div>
-
-                <span className="ml-auto text-xs font-semibold text-emerald-600">
-                  +18%
-                </span>
-              </div>
-
-              {/* Footer */}
-              <div className="mt-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 p-4 text-white shadow-lg shadow-indigo-500/20">
-                <p className="text-xs font-medium text-indigo-100">
-                  Monthly performance
-                </p>
-
-                <div className="mt-1 flex items-end justify-between">
-                  <p className="text-2xl font-bold">
-                    87%
-                  </p>
-
-                  <p className="text-xs font-medium text-indigo-100">
-                    +6.4% this month
-                  </p>
-                </div>
-
-                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/20">
-                  <div className="h-full w-[87%] rounded-full bg-white" />
-                </div>
-              </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-800">
+                        {item.title}
+                      </p>
+                      <p className="mt-0.5 text-sm text-slate-500">
+                        {loading ? "Loading..." : item.value}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
             </CardContent>
           </Card>
         </div>
 
-        {/* =====================================================
-            BOTTOM ACTIVITY STRIP
-        ====================================================== */}
+        {/* BOTTOM INFORMATION */}
         <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="flex flex-col justify-between gap-4 p-5 md:flex-row md:items-center">
             <div className="flex items-center gap-4">
-              <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-                <CheckCircle2 className="size-5" />
+              <div className="flex size-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+                <Activity className="size-5" />
               </div>
 
               <div>
                 <p className="font-semibold text-slate-800">
-                  Portal activity is healthy
+                  CLP Portal Database Overview
                 </p>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  31 services completed successfully this month.
+                  {loading
+                    ? "Fetching live database records..."
+                    : error
+                      ? "Database information could not be loaded."
+                      : "Dashboard figures are based on actual database records."}
                 </p>
               </div>
             </div>
 
-            <button
-              type="button"
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 hover:shadow-md"
-            >
-              View Reports
-              <ArrowUpRight className="size-4" />
-            </button>
+            <Badge variant="outline" className="w-fit">
+              {loading ? "Loading" : error ? "Unavailable" : "Live Data"}
+            </Badge>
           </CardContent>
         </Card>
       </div>

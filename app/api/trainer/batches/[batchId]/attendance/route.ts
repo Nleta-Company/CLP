@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiRole } from "@/lib/auth/api-authorization";
 import { prisma } from "@/lib/prisma";
@@ -22,14 +21,13 @@ function apiError(message: string, status = 400) {
   );
 }
 
-// Strictly validate YYYY-MM-DD and prevent invalid dates such as Feb 31.
+// Strictly validate YYYY-MM-DD and reject impossible dates.
 function parseAttendanceDate(value: string | null) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return null;
   }
 
   const [year, month, day] = value.split("-").map(Number);
-
   const date = new Date(Date.UTC(year, month - 1, day));
 
   if (
@@ -43,12 +41,8 @@ function parseAttendanceDate(value: string | null) {
   return date;
 }
 
-// Every attendance operation verifies that this batch belongs
-// to an assignment allocated to the logged-in trainer.
-async function getAuthorizedBatch(
-  batchId: string,
-  trainerId: string
-) {
+// Every operation verifies that the batch belongs to this trainer.
+async function getAuthorizedBatch(batchId: string, trainerId: string) {
   return prisma.batch.findFirst({
     where: {
       id: batchId,
@@ -85,8 +79,22 @@ async function getAuthorizedBatch(
         },
       },
       participantsList: {
-        orderBy: {
-          name: "asc",
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          designation: true,
+          attendanceRecords: {
+            orderBy: { attendanceDate: "desc" },
+            take: 10,
+            select: {
+              attendanceDate: true,
+              status: true,
+              remarks: true,
+            },
+          },
         },
       },
     },
@@ -94,16 +102,12 @@ async function getAuthorizedBatch(
 }
 
 // GET /api/trainer/batches/[batchId]/attendance?date=YYYY-MM-DD
-export async function GET(
-  request: NextRequest,
-  context: RouteContext
-) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const auth = await requireApiRole(["TRAINER"]);
     if (auth.response) return auth.response;
 
     const { batchId } = await context.params;
-
     const dateValue = request.nextUrl.searchParams.get("date");
     const attendanceDate = parseAttendanceDate(dateValue);
 
@@ -111,24 +115,16 @@ export async function GET(
       return apiError("Select a valid attendance date.");
     }
 
-    const batch = await getAuthorizedBatch(
-      batchId,
-      auth.user.id
-    );
+    const batch = await getAuthorizedBatch(batchId, auth.user.id);
 
     if (!batch) {
-      return apiError(
-        "Batch not found or not assigned to you.",
-        404
-      );
+      return apiError("Batch not found or not assigned to you.", 404);
     }
 
     const records = await prisma.attendanceRecord.findMany({
       where: {
         attendanceDate,
-        participant: {
-          batchId: batch.id,
-        },
+        participant: { batchId: batch.id },
       },
       select: {
         participantId: true,
@@ -147,46 +143,39 @@ export async function GET(
       ])
     );
 
-    return NextResponse.json({
-      success: true,
-      batch: {
-        id: batch.id,
-        batchNumber: batch.batchNumber,
-        participants: batch.participants,
-        status: batch.status,
-        trainerAssignmentId: batch.trainerAssignmentId,
-        program: batch.requestProgram.program,
-        request: batch.requestProgram.request,
-        participantsList: batch.participantsList,
+    return NextResponse.json(
+      {
+        success: true,
+        batch: {
+          id: batch.id,
+          batchNumber: batch.batchNumber,
+          participants: batch.participants,
+          status: batch.status,
+          trainerAssignmentId: batch.trainerAssignmentId,
+          program: batch.requestProgram.program,
+          request: batch.requestProgram.request,
+          participantsList: batch.participantsList,
+        },
+        attendanceDate: dateValue,
+        attendanceByParticipant,
       },
-      attendanceDate: dateValue,
-      attendanceByParticipant,
-    });
+      {
+        headers: { "Cache-Control": "no-store" },
+      }
+    );
   } catch (error) {
     console.error("Trainer Attendance GET Error:", error);
-
     return apiError("Unable to fetch attendance.", 500);
   }
 }
 
 // POST /api/trainer/batches/[batchId]/attendance
-// Body:
-// {
-//   attendanceDate: "YYYY-MM-DD",
-//   records: [
-//     { participantId: "...", status: "PRESENT", remarks: "..." }
-//   ]
-// }
-export async function POST(
-  request: NextRequest,
-  context: RouteContext
-) {
+export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const auth = await requireApiRole(["TRAINER"]);
     if (auth.response) return auth.response;
 
     const { batchId } = await context.params;
-
     const body = await request.json().catch(() => null);
 
     if (
@@ -197,9 +186,7 @@ export async function POST(
       return apiError("Invalid attendance request.");
     }
 
-    const attendanceDate = parseAttendanceDate(
-      body.attendanceDate
-    );
+    const attendanceDate = parseAttendanceDate(body.attendanceDate);
 
     if (!attendanceDate) {
       return apiError("Select a valid attendance date.");
@@ -209,16 +196,10 @@ export async function POST(
       return apiError("No attendance records were submitted.");
     }
 
-    const batch = await getAuthorizedBatch(
-      batchId,
-      auth.user.id
-    );
+    const batch = await getAuthorizedBatch(batchId, auth.user.id);
 
     if (!batch) {
-      return apiError(
-        "Batch not found or not assigned to you.",
-        404
-      );
+      return apiError("Batch not found or not assigned to you.", 404);
     }
 
     const allowedParticipantIds = new Set(
@@ -226,12 +207,9 @@ export async function POST(
     );
 
     if (allowedParticipantIds.size === 0) {
-      return apiError(
-        "No participants are registered in this batch."
-      );
+      return apiError("No participants are registered in this batch.");
     }
 
-    // Attendance must be submitted for every registered participant.
     if (body.records.length !== allowedParticipantIds.size) {
       return apiError(
         "Please submit attendance for every participant in this batch."
@@ -248,9 +226,7 @@ export async function POST(
         !["PRESENT", "ABSENT", "LATE"].includes(record.status) ||
         seen.has(record.participantId)
       ) {
-        return apiError(
-          "One or more attendance entries are invalid."
-        );
+        return apiError("One or more attendance entries are invalid.");
       }
 
       if (
@@ -258,18 +234,14 @@ export async function POST(
         record.remarks !== null &&
         typeof record.remarks !== "string"
       ) {
-        return apiError(
-          "Attendance remarks must be text."
-        );
+        return apiError("Attendance remarks must be text.");
       }
 
       if (
         typeof record.remarks === "string" &&
         record.remarks.length > 2000
       ) {
-        return apiError(
-          "Attendance remarks cannot exceed 2000 characters."
-        );
+        return apiError("Attendance remarks cannot exceed 2000 characters.");
       }
 
       seen.add(record.participantId);
@@ -302,17 +274,21 @@ export async function POST(
       )
     );
 
-    return NextResponse.json({
-      success: true,
-      message: "Attendance saved successfully.",
-      savedCount: records.length,
-      attendanceDate: body.attendanceDate,
-      batchId: batch.id,
-      trainerAssignmentId: batch.trainerAssignmentId,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        message: "Attendance saved successfully.",
+        savedCount: records.length,
+        attendanceDate: body.attendanceDate,
+        batchId: batch.id,
+        trainerAssignmentId: batch.trainerAssignmentId,
+      },
+      {
+        headers: { "Cache-Control": "no-store" },
+      }
+    );
   } catch (error) {
     console.error("Trainer Attendance POST Error:", error);
-
     return apiError("Unable to save attendance.", 500);
   }
 }

@@ -65,6 +65,14 @@ type RequestStatus =
   | "COMPLETED"
   | "CANCELLED"
 
+interface ProgrammeParticipant {
+  id: string
+  name: string
+  email: string | null
+  designation: string
+  phone: string | null
+}
+
 interface Programme {
   code: string
   title: string
@@ -73,6 +81,7 @@ interface Programme {
   mode: string
   participants: number
   batches: number
+  participantsDetails: ProgrammeParticipant[]
 }
 
 interface TimelineItem {
@@ -307,6 +316,7 @@ export default function ServiceRequestDetailClient({
   const [clientPoNumber, setClientPoNumber] = useState("")
   const [confirmedTrainingSchedule, setConfirmedTrainingSchedule] = useState("")
   const [dailyTrainingTiming, setDailyTrainingTiming] = useState("")
+  const [paymentTerm, setPaymentTerm] = useState<"FULL" | "HALF_HALF" | "HALF_QUARTER_QUARTER" | "">("")
   const [paymentMilestones, setPaymentMilestones] = useState("")
   const [logisticsTreatment, setLogisticsTreatment] = useState("")
   const [pdfViewing, setPdfViewing] = useState(false)
@@ -671,6 +681,10 @@ export default function ServiceRequestDetailClient({
 
   async function createFTO() {
     if (ftoSaving) return
+    if (!paymentTerm) {
+      setActionMessage("Please select a payment term before creating the FTO.")
+      return
+    }
     const missingTtmOption = (requestData?.programmes || []).some(
       (programme) => programme.code.startsWith("TTM-") && !ttmOptions[programme.code]
     )
@@ -698,6 +712,7 @@ export default function ServiceRequestDetailClient({
           clientPoNumber,
           confirmedTrainingSchedule,
           dailyTrainingTiming,
+          paymentTerm,
           paymentMilestones,
           logisticsTreatment,
         }),
@@ -1444,6 +1459,59 @@ export default function ServiceRequestDetailClient({
                             value={String(programme.batches)}
                           />
                         </div>
+
+                        <div className="mt-5 border-t border-slate-100 pt-4">
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h4 className="text-sm font-semibold text-slate-900">
+                                Participant Details
+                              </h4>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Individual participant information submitted by the client
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                              {programme.participantsDetails?.length ?? 0} / {programme.participants} saved
+                            </Badge>
+                          </div>
+
+                          {programme.participantsDetails?.length ? (
+                            <div className="overflow-x-auto rounded-lg border border-slate-200">
+                              <table className="w-full min-w-[650px] text-left text-sm">
+                                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                                  <tr>
+                                    <th className="px-4 py-3 font-semibold">#</th>
+                                    <th className="px-4 py-3 font-semibold">Full Name</th>
+                                    <th className="px-4 py-3 font-semibold">Email ID</th>
+                                    <th className="px-4 py-3 font-semibold">Designation</th>
+                                    <th className="px-4 py-3 font-semibold">Mobile Number</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {programme.participantsDetails.map((participant, index) => (
+                                    <tr key={participant.id} className="bg-white">
+                                      <td className="px-4 py-3 text-slate-500">{index + 1}</td>
+                                      <td className="px-4 py-3 font-medium text-slate-900">{participant.name}</td>
+                                      <td className="px-4 py-3 text-slate-600">{participant.email || "Not provided"}</td>
+                                      <td className="px-4 py-3 text-slate-600">{participant.designation}</td>
+                                      <td className="px-4 py-3 text-slate-600">{participant.phone || "Not provided"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/60 px-4 py-5 text-center">
+                              <Users className="mx-auto size-5 text-amber-600" />
+                              <p className="mt-2 text-sm font-medium text-slate-700">
+                                No individual participant details saved
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Expected participant count: {programme.participants}
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2139,8 +2207,51 @@ export default function ServiceRequestDetailClient({
                             className="min-h-24 w-full rounded-md border border-slate-300 bg-white p-3"
                             placeholder="Enter confirmed dates, session-wise schedule or batch-wise schedule. Leave blank if not confirmed yet." />
                         </label>
+                        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50/60 p-4">
+                          <label htmlFor="fto-payment-term" className="mb-2 block text-sm font-semibold text-slate-800">
+                            Payment Term <span className="text-rose-600">*</span>
+                          </label>
+                          <select
+                            id="fto-payment-term"
+                            value={paymentTerm}
+                            onChange={(event) =>
+                              setPaymentTerm(
+                                event.target.value as "FULL" | "HALF_HALF" | "HALF_QUARTER_QUARTER" | ""
+                              )
+                            }
+                            required
+                            className="h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                          >
+                            <option value="">Select payment term</option>
+                            <option value="FULL">Full Advance – 100% before training</option>
+                            <option value="HALF_HALF">50% Advance + 50% before completion</option>
+                            <option value="HALF_QUARTER_QUARTER">50% Advance + 25% during training + 25% on completion</option>
+                          </select>
+                          <p className="mt-2 text-xs text-slate-600">
+                            Installments will be generated automatically in the FTO according to the selected payment term.
+                          </p>
+                          {paymentTerm && (
+                            <div className="mt-3 rounded-md border border-blue-100 bg-white p-3 text-xs text-slate-700">
+                              <p className="font-semibold text-slate-800">Selected payment schedule</p>
+                              {paymentTerm === "FULL" && <p className="mt-1">100% – Full advance before training starts.</p>}
+                              {paymentTerm === "HALF_HALF" && (
+                                <ul className="mt-1 list-inside list-disc space-y-1">
+                                  <li>50% – Advance payment</li>
+                                  <li>50% – Before training completion</li>
+                                </ul>
+                              )}
+                              {paymentTerm === "HALF_QUARTER_QUARTER" && (
+                                <ul className="mt-1 list-inside list-disc space-y-1">
+                                  <li>50% – Advance payment</li>
+                                  <li>25% – During training</li>
+                                  <li>25% – On completion</li>
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                        </div>
                         <label className="mt-4 block text-sm">
-                          <span className="mb-1 block font-medium text-slate-600">Payment Milestones</span>
+                          <span className="mb-1 block font-medium text-slate-600">Payment Milestones (Additional Notes)</span>
                           <textarea value={paymentMilestones} onChange={(event) => setPaymentMilestones(event.target.value)}
                             maxLength={3000}
                             className="min-h-20 w-full rounded-md border border-slate-300 bg-white p-3"
@@ -2184,7 +2295,7 @@ export default function ServiceRequestDetailClient({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <CardTitle>Final Training Offer</CardTitle>
-                      <CardDescription>{existingFto.ftoNumber} · {requestData.status === "FTO_SENT" ? "Sent to client" : "Draft created"}</CardDescription>
+                      <CardDescription>{existingFto.ftoNumber} · {requestData.status === "FTO_SENT" ? "Sent to client" : "Draft created"} · Payment Term: {String(existingFto.paymentTerm || "Not available").replaceAll("_", " ")}</CardDescription>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">

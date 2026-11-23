@@ -31,11 +31,19 @@ interface Program {
   duration: string
 }
 
+interface ParticipantDetail {
+  name: string
+  email: string
+  designation: string
+  phone: string
+}
+
 interface Requirement {
   code: string
   participants: string
   batches: string
   mode: string
+  participantsDetails?: ParticipantDetail[]
 }
 
 interface RequestData {
@@ -181,6 +189,24 @@ export default function ClientRequestReviewPage() {
       return
     }
 
+    const invalidParticipant = data.programRequirements.find((item) => {
+      const count = Number(item.participants)
+      const people = item.participantsDetails ?? []
+      return (
+        people.length !== count ||
+        people.some(
+          (person) => !person.name?.trim() || !person.designation?.trim()
+        )
+      )
+    })
+
+    if (invalidParticipant) {
+      setError(
+        `Please complete Full Name and Designation for every participant in programme ${invalidParticipant.code}.`
+      )
+      return
+    }
+
     try {
       setSubmitting(true)
 
@@ -214,6 +240,7 @@ export default function ClientRequestReviewPage() {
           participants: item.participants,
           batches: item.batches,
           mode: item.mode,
+          participantsDetails: item.participantsDetails ?? [],
         })),
       }
 
@@ -238,9 +265,16 @@ export default function ClientRequestReviewPage() {
       const result = await response.json()
 
       if (!response.ok || !result.success) {
+        console.error("Service Request API Error:", {
+          status: response.status,
+          response: result,
+        });
+
         throw new Error(
-          result.message || "Unable to submit your service request."
-        )
+          result.debug ||
+          result.message ||
+          "Unable to submit your service request."
+        );
       }
 
       // Request reference must come from the backend response.
@@ -534,6 +568,34 @@ export default function ClientRequestReviewPage() {
                       }
                     />
                   </div>
+
+                  {requirement?.participantsDetails?.length ? (
+                    <div className="mt-5 border-t border-slate-200 pt-4">
+                      <h4 className="mb-3 text-sm font-bold text-slate-800">
+                        Participant Details
+                      </h4>
+                      <div className="space-y-3">
+                        {requirement.participantsDetails.map((participant, index) => (
+                          <div
+                            key={`${program.code}-participant-${index}`}
+                            className="rounded-lg border border-slate-200 bg-white p-3"
+                          >
+                            <div className="mb-2 flex items-center justify-between">
+                              <p className="text-xs font-bold uppercase tracking-wide text-indigo-600">
+                                Participant {index + 1}
+                              </p>
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <InfoRow label="Full Name" value={participant.name} />
+                              <InfoRow label="Designation" value={participant.designation} />
+                              <InfoRow label="Email ID" value={participant.email} />
+                              <InfoRow label="Mobile Number" value={participant.phone} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )
             })}
